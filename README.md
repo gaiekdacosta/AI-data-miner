@@ -4,7 +4,7 @@
 esquecer o que já descobriu e sem conseguir escrever uma linha sequer.**
 
 > Este repositório acompanha o artigo
-> **[TÍTULO DO ARTIGO](https://SEU-SUBSTACK.substack.com/p/SEU-ARTIGO)** no Substack,
+> **[TÍTULO DO ARTIGO](https://substack.com/home/post/p-213281631)** no Substack,
 > onde conto como o projeto nasceu e o que aprendi construindo. Aqui está o código —
 > e um banco de exemplo para você ver tudo funcionando em dois minutos.
 
@@ -242,8 +242,3 @@ interessantes.
 | [check.py](check.py) · [tests/](tests/) | verificador da base e testes (rodam no CI) |
 
 O porquê de cada decisão, em detalhe: [ARQUITETURA.md](ARQUITETURA.md).
-
-## Licença
-
-[A DEFINIR — por exemplo, MIT. Sem uma licença, o código fica com todos os direitos
-reservados e ninguém pode reutilizá-lo.]
