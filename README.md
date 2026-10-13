@@ -1,166 +1,249 @@
 # motor-consulta
 
-Motor para um agente de IA (Claude Code, Claude Desktop ou qualquer cliente
-[MCP](https://modelcontextprotocol.io)) responder perguntas de negócio consultando
-**bancos de dados de produção em modo somente leitura**, sem inventar nome de
-tabela e sem esquecer o que já foi descoberto.
+**Um motor para a IA consultar bancos de dados de produção sem inventar coluna, sem
+esquecer o que já descobriu e sem conseguir escrever uma linha sequer.**
 
-O agente não está aqui dentro: quem pensa é o modelo do cliente. O que o projeto
-entrega são as duas camadas que fazem esse agente ser útil sem ser perigoso:
+> Este repositório acompanha o artigo
+> **[TÍTULO DO ARTIGO](https://SEU-SUBSTACK.substack.com/p/SEU-ARTIGO)** no Substack,
+> onde conto como o projeto nasceu e o que aprendi construindo. Aqui está o código —
+> e um banco de exemplo para você ver tudo funcionando em dois minutos.
 
-- **memória**: uma base de conhecimento versionada (dicionário de dados gerado
-  do catálogo + notas curtas com as regras e armadilhas de cada banco) e uma
-  recuperação que entrega ao modelo só o pedaço relevante para cada pergunta;
-- **contenção**: só `SELECT`/`WITH` passam, a sessão do banco é read-only onde o
-  engine permite, há teto de tempo por consulta, validação de tabela e coluna antes
-  de executar, acesso por pessoa e por banco, prazo de validade do acesso e trilha
-  de auditoria.
+---
 
-Engines suportados: **PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, Firebird e
-SQLite**. O repositório traz um banco de exemplo (SQLite, dados fictícios) para ver
-tudo funcionando em poucos minutos.
+## O problema
 
+Pedir a um modelo de linguagem "quanto faturamos no trimestre?" e deixá-lo escrever o
+SQL parece resolvido — até você tentar contra um banco de verdade. Três coisas dão
+errado, sempre nesta ordem:
+
+1. **Ele inventa.** Nome de tabela que não existe, coluna que "deveria" existir. O
+   schema de um ERP real não cabe no prompt, então o modelo preenche o que falta com
+   o que é plausível.
+2. **Ele erra o critério, não a sintaxe.** O SQL roda, devolve um número, e o
+   número está errado: entrou pedido cancelado, usou o preço de cadastro em vez do
+   preço da venda, esqueceu o desconto. Essas regras não estão no schema — estão na
+   cabeça de quem já apanhou daquele banco.
+3. **Ele esquece.** A armadilha descoberta hoje vai ser redescoberta (ou não) na
+   semana que vem, por outra pessoa, em outra conversa.
+
+E por cima disso tudo: é **banco de produção**. Um `DELETE` gerado por engano, uma
+consulta que trava o servidor, uma credencial que vaza — nada disso é aceitável.
+
+## A ideia
+
+O agente não está aqui dentro. Quem pensa é o modelo do cliente (Claude Code, Claude
+Desktop ou qualquer cliente [MCP](https://modelcontextprotocol.io)). O que este
+projeto entrega são as duas camadas que fazem esse agente ser **útil sem ser
+perigoso**:
+
+- **Memória** — uma base de conhecimento versionada no git: um dicionário de dados
+  gerado do catálogo do banco + **notas curtas** com as regras e armadilhas que só a
+  experiência ensina. A cada pergunta, o modelo recebe só o pedaço relevante.
+- **Contenção** — só `SELECT`/`WITH` passam; a sessão do banco é read-only; toda
+  consulta tem teto de tempo; tabela e coluna são conferidas antes de executar; cada
+  pessoa só alcança os bancos liberados para ela; e tudo fica registrado.
+
+```mermaid
+flowchart LR
+    P["Pergunta em português"] --> R["recuperar_contexto<br/>schema + notas relevantes"]
+    R --> M["O modelo escreve o SELECT"]
+    M --> V["validar_sql<br/>a tabela e a coluna existem?"]
+    V --> C["consultar_sql<br/>só SELECT · sessão read-only · teto de tempo"]
+    C --> B[("Banco liberado<br/>para a pessoa")]
+    C --> A["Trilha de auditoria +<br/>catálogo de perguntas"]
 ```
-pergunta ─► recuperar_contexto ─► schema + notas relevantes (~1-8k tokens)
-                                        │
-SELECT ───► validar_sql ──────────► coluna/tabela existe?  (dicionário + catálogo ao vivo)
-                                        │
-            consultar_sql ────────► só SELECT/WITH · sessão read-only · teto de tempo
-                                        │
-                                   banco (perfil liberado para a pessoa)
-```
 
-## Experimente em 2 minutos (sem banco nenhum)
+Funciona com **PostgreSQL, MySQL/MariaDB, SQL Server, Oracle, Firebird e SQLite**.
 
-Só Python 3.10+, sem instalar pacote:
+## Uma pergunta, quatro respostas
+
+O repositório traz um banco de exemplo: uma loja fictícia de papelaria e informática,
+com um ano de pedidos. Pergunte "quanto a loja faturou em 2025?" e veja quantos
+números plausíveis existem:
+
+| O SQL que parece certo | Resultado |
+|---|---|
+| soma de todos os itens de pedido | R$ 2.590.770,23 — inclui cancelados e abertos |
+| quantidade × preço do produto | R$ 2.588.460,94 — usa o preço de **hoje**, já reajustado |
+| quantidade × preço da venda | R$ 2.414.739,00 — esquece o desconto |
+| **pedidos faturados, preço da venda, com desconto** | **R$ 2.317.595,29** ✔ |
+
+E "receita líquida" é outra conta ainda: a view mensal do banco **não** abate
+devoluções (R$ 2.259.076,92).
+
+Nenhum desses erros é de sintaxe, e nenhum aparece no schema. Eles estão nas notas de
+[`NOTES/loja/`](NOTES/loja/) — e é por isso que o modelo acerta quando as recebe.
+
+## Experimente em 2 minutos
+
+Só Python 3.10+, sem instalar nenhum pacote:
 
 ```bash
+git clone https://github.com/gaiekdacosta/motor-consulta.git
+cd motor-consulta
 cp .env.example .env
-python3 exemplo/criar_banco.py                     # gera exemplo/loja.db
-python3 consultar.py ping
+python3 exemplo/criar_banco.py          # gera o banco de exemplo (SQLite)
+
 python3 consultar.py query "SELECT * FROM vw_faturamento_mensal LIMIT 3"
 python3 recuperar.py "quanto a loja faturou por categoria em 2025"
 python3 validar_sql.py "SELECT p.preco_venda FROM produtos p"
 ```
 
-O `recuperar.py` mostra o que o modelo receberia antes de escrever o SQL: o schema
-das tabelas certas e as notas de `NOTES/loja/`, que avisam, por exemplo, que o valor
-vendido não é o preço do cadastro e que a view mensal não abate devoluções. O
-`validar_sql.py` aponta a coluna inventada e sugere a certa.
+- O `recuperar.py` mostra exatamente o que o modelo receberia antes de escrever o
+  SQL: o schema das tabelas certas e as notas que avisam das armadilhas.
+- O `validar_sql.py` aponta a coluna inventada e sugere a que existe
+  (`talvez: PRECO_TABELA`).
+- O `consultar.py` recusa qualquer coisa que não seja leitura — experimente um
+  `DELETE`.
 
-Para usar com o **Claude Code** nesta máquina, sem servidor (stdio):
+Para conversar com o banco pelo **Claude Code**:
 
 ```bash
 pip install -r requirements.txt
 claude mcp add motor-consulta -- python3 "$PWD/mcp_server.py"
 ```
 
-Com Docker, o mesmo exemplo:
-
-```bash
-cp .env.example .env
-docker compose run --rm cli query "SELECT status, COUNT(*) FROM pedidos GROUP BY status"
-```
-
 ## Ligando o seu banco
 
-1. **Declare o perfil no `.env`.** Um perfil é um banco:
+Cada banco é um **perfil** no `.env`:
 
-   ```ini
-   PERFIS=vendas,rh
-   PERFIS_SENSIVEIS=rh            # dado de pessoa: o servidor pede agregado
-   db_vendas_engine=postgres
-   db_vendas_host=10.0.0.10
-   db_vendas_database=erp
-   db_vendas_username=leitura     # SEMPRE um usuário só-leitura no banco
-   db_vendas_password=...
-   db_vendas_descricao=ERP — pedidos, notas fiscais e estoque
-   ```
+```ini
+PERFIS=vendas,rh
+PERFIS_SENSIVEIS=rh                 # dado de pessoa: o modelo é orientado a agregar
+db_vendas_engine=postgres
+db_vendas_host=10.0.0.10
+db_vendas_database=erp
+db_vendas_username=leitura          # use SEMPRE um usuário que só pode ler
+db_vendas_password=...
+db_vendas_descricao=ERP — pedidos, notas fiscais e estoque
+```
 
-   O [.env.example](.env.example) traz o modelo de cada engine e todas as opções
-   (TLS, teto de tempo, schema, dois perfis no mesmo schema).
-
-2. **Teste a conexão:** `python3 consultar.py --perfil vendas ping` (drivers via
-   `pip install -r requirements.txt`, ou use o Docker).
-
-3. **Gere o dicionário de dados.** Banco pequeno: catálogo inteiro. Banco grande:
-   só o que as notas e o `contexto/tabelas_extras_<banco>.txt` citam.
-
-   ```bash
-   python3 gerar_dicionario.py --perfil vendas --todas     # até 500 objetos
-   python3 gerar_dicionario.py --perfil vendas             # pelo uso
-   ```
-
-4. **Escreva notas** à medida que descobre as regras. Cada descoberta (o filtro
-   obrigatório, a ponte entre duas tabelas, a coluna que engana) vira um arquivo
-   curto em `NOTES/<banco>/<assunto>/`, partindo de
-   [NOTES/_TEMPLATE.md](NOTES/_TEMPLATE.md). Depois, `python3 check.py`.
-
-5. Apague o exemplo quando não precisar mais: `NOTES/loja/`,
-   `contexto/dicionario_loja.md`, `contexto/cabecalho_loja.md`, o perfil `loja` do
-   `.env` e as linhas do exemplo em `contexto/instrucoes.md` e
-   `contexto/glossario.txt`. Rode `python3 check.py` para regenerar os índices.
-
-## Servidor compartilhado (uma base, várias pessoas)
-
-Para a equipe inteira usar o mesmo conhecimento, sobem três serviços: o servidor
-MCP, um proxy Caddy que exige token por pessoa e um painel web para administrar
-esses tokens.
+Depois:
 
 ```bash
-cp .env.example .env                        # perfis + MCP_PROXY_SEGREDO
-cp .env.admin.example .env.admin            # ADMIN_SENHA
+python3 consultar.py --perfil vendas ping
+python3 gerar_dicionario.py --perfil vendas --todas   # banco pequeno: catálogo inteiro
+python3 gerar_dicionario.py --perfil vendas           # banco grande: só o que as notas usam
+```
+
+E, a cada descoberta, **uma nota** em `NOTES/<banco>/<assunto>/`, partindo do
+[modelo](NOTES/_TEMPLATE.md). O [.env.example](.env.example) traz a configuração de
+cada engine.
+
+## Para a equipe inteira
+
+O mesmo conhecimento servido a várias pessoas: um servidor MCP, um proxy Caddy que
+exige **token individual** e um **painel web** para criar, renovar e revogar acessos e
+escolher os bancos de cada pessoa.
+
+```bash
+cp .env.example .env && cp .env.admin.example .env.admin
 cp caddy/tokens.caddy.example caddy/tokens.caddy
-chmod 600 .env .env.admin caddy/tokens.caddy
 docker compose up -d mcp proxy admin
 ```
 
-No painel (`http://127.0.0.1:8012`) você cria o acesso de cada pessoa, escolhe os
-bancos dela e recebe o comando pronto para o Claude Code e o bloco de configuração
-do Claude Desktop. O passo a passo completo, com rede, TLS, prazos e operação, está
-em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md).
+O painel entrega o comando pronto para o Claude Code e a configuração do Claude
+Desktop. Passo a passo em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md).
 
-| Tool / recurso | O que faz |
-|---|---|
-| `listar_indice()` | índice global: tabelas conhecidas + notas, com caminho |
-| `recuperar_contexto(pergunta)` | schema + notas relevantes para a pergunta |
-| `validar_sql(sql, perfil)` | confere coluna e tabela antes de executar |
-| `consultar_sql(sql, perfil)` | executa o SELECT e devolve CSV |
-| `nota://<banco>/<assunto>/<slug>` | cada nota como resource |
-| `dicionario://<perfil>/<tabela>` | schema de uma tabela |
-| prompt `pergunta` | o roteiro recuperar → validar → consultar → citar a query |
+## O que aprendi construindo
 
-## Segurança, em uma tabela
+Cada item abaixo é uma decisão de código que nasceu de algo que deu errado — ou que
+quase deu.
+
+**1. O dicionário inteiro não cabe — e não deveria caber.** O schema de um ERP real
+passa de centenas de milhares de tokens. A recuperação (índice TF-IDF + grafo de
+tabelas) entrega alguns milhares por pergunta: as tabelas certas, as tabelas-ponte e
+as notas ligadas. Sem API de embedding, sem banco vetorial — Python puro e um JSON
+versionado no git.
+
+**2. Radical não é sinônimo.** O índice trata plural e flexão do português
+(`devoluções` → `devolucao`) e casa abreviação com palavra inteira (`fatur` ~
+`faturamento`). Mas nenhuma regra liga `devolução` a `estorno`. Para isso existe um
+glossário escrito à mão — aplicado só à pergunta, para não exigir reconstruir o
+índice.
+
+**3. Validar antes de executar muda o comportamento do modelo.** Quando a coluna
+inventada volta como erro com sugestão (`talvez: PRECO_TABELA`), o modelo corrige e
+segue. Quando volta como erro genérico do banco, ele tenta outro caminho — às vezes
+pior.
+
+**4. Read-only é uma pilha, não uma linha.** O validador recusa tudo que não seja
+`SELECT`/`WITH` (inclusive `WITH ... DELETE`). Por baixo, a sessão do banco também é
+read-only: nos testes, nem a conta **dona** do banco consegue apagar uma linha. E por
+baixo de tudo, o conselho que nenhum código substitui: dê à ferramenta um usuário que
+só pode ler.
+
+**5. Header que diz "quem pode o quê" só vale se ninguém puder forjá-lo.** O proxy
+injeta, por pessoa, os bancos liberados. Mas quem alcançasse a porta do servidor MCP
+**direto** mandaria esse header por conta própria e consultaria tudo, sem token. A
+correção é um segredo que só o proxy conhece, conferido no transporte — antes de
+qualquer tool, resource ou prompt.
+
+**6. Configuração que não chegou nunca vira permissão.** Segredo vazio: o servidor
+recusa tudo. Lista de bancos vazia: ninguém consulta nada. Painel sem senha: só sobe
+em `127.0.0.1`. Em todo lugar onde faltar config, o padrão é negar.
+
+**7. Uma consulta travada não pode derrubar todo mundo.** Uma ferramenta síncrona
+rodando no event loop fazia uma única consulta pendurada parar o servidor para todos
+os usuários. Hoje a consulta roda numa thread **e** um vigia a cancela quando passa do
+teto de tempo — as duas metades são necessárias.
+
+**8. Sessão longa em rede real morre de um jeito feio.** Um stream aberto por horas é
+cortado em silêncio por um firewall; a reconexão do cliente leva um erro e a
+ferramenta some até o app reiniciar. Como as tools são síncronas e o servidor nunca
+empurra nada, a solução foi abrir mão da sessão.
+
+**9. "Achou alguma coisa" é sempre verdade.** Para descobrir que perguntas a base não
+sabe responder, o natural seria marcar "não recuperou nada". Mas a similaridade de
+cosseno sempre devolve *alguma* nota. O que funciona é guardar a **força** da melhor
+nota: abaixo de um piso, a pergunta entra numa fila de lacunas, e um relatório semanal
+transforma cada lacuna num rascunho de nota, com as consultas que funcionaram.
+
+**10. Token sem prazo é vazamento sem prazo.** Todo acesso vence. Renovar estende o
+prazo sem trocar o token (ninguém reconfigura máquina); rotacionar troca o token. E a
+trilha de auditoria guarda cada consulta — inclusive as recusadas, que são as mais
+interessantes.
+
+## Segurança em uma tabela
 
 | Camada | O que garante |
 |---|---|
-| `consultar.py` | só uma instrução, começando por `SELECT`/`WITH`, sem comando de escrita no meio (inclusive CTE com `DELETE`) |
-| sessão do banco | read-only no PostgreSQL, MySQL/MariaDB e SQLite (o servidor recusa escrita mesmo de uma conta dona) |
-| teto de tempo | no servidor (MySQL, PostgreSQL) e por cancelamento (Oracle, Firebird, SQLite); SQL Server pelo driver |
-| proxy Caddy | token por pessoa; injeta os bancos liberados, quem é e até quando vale |
-| segredo do proxy | o servidor MCP recusa (403) qualquer HTTP que não passou pelo proxy |
-| painel | não recebe as senhas dos bancos; sem `ADMIN_SENHA` só sobe em loopback |
-| trilha | toda consulta (e toda recusa) em `auditoria/`, com pessoa, perfil e SQL |
+| validador | uma instrução só, começando por `SELECT`/`WITH`, sem comando de escrita no meio |
+| sessão do banco | read-only no PostgreSQL, MySQL/MariaDB e SQLite |
+| teto de tempo | no servidor (PostgreSQL, MySQL) ou por cancelamento (Oracle, Firebird, SQLite) |
+| proxy | token por pessoa; injeta bancos liberados, identidade e validade |
+| segredo do proxy | o servidor MCP recusa qualquer requisição que não passou pelo proxy |
+| painel | não recebe as senhas dos bancos; sem senha, só em loopback |
+| trilha | toda consulta e toda recusa, com pessoa, banco e SQL |
 
-A camada que mais importa continua sendo a sua: **use um usuário de banco que só
-pode ler**. A ferramenta é read-only por construção, mas a credencial deveria ser
-também.
+## O que ele não é
+
+- **Não é um BI.** Ele responde perguntas e cita a consulta que usou; não monta
+  painel nem guarda resultado.
+- **Não substitui conhecer o banco.** As notas são escritas por gente que conferiu o
+  dado. O relatório de lacunas aponta onde escrever; o julgamento é humano.
+- **O guardrail libera na dúvida.** Ele existe para o modelo se corrigir, não como
+  trava de segurança — essa é o validador de leitura e a sessão read-only.
+- **A busca é léxica e em português.** TF-IDF com regras de flexão do português, sem
+  embeddings. Trocar por embeddings mexe em uma etapa só (`vetorial.buscar`).
 
 ## Mapa do repositório
 
 | Arquivo | Papel |
 |---|---|
-| [perfis.py](perfis.py) | registro dos perfis declarados no `.env` |
-| [conexao.py](conexao.py) | conexão read-only nos 6 engines |
+| [perfis.py](perfis.py) · [conexao.py](conexao.py) | perfis do `.env` e conexão read-only nos 6 engines |
 | [consultar.py](consultar.py) | CLI e o único caminho de execução de SQL |
 | [validar_sql.py](validar_sql.py) | guardrail de schema |
-| [gerar_dicionario.py](gerar_dicionario.py) | catálogo do banco → `contexto/dicionario_<banco>.md` |
-| [grafo.py](grafo.py), [vetorial.py](vetorial.py), [recuperar.py](recuperar.py) | grafo das notas, índice TF-IDF e recuperação |
-| [check.py](check.py) | verificador da base (rode antes de commitar; roda no CI) |
+| [gerar_dicionario.py](gerar_dicionario.py) | catálogo do banco → dicionário em markdown |
+| [vetorial.py](vetorial.py) · [grafo.py](grafo.py) · [recuperar.py](recuperar.py) | índice, grafo das notas e recuperação |
 | [mcp_server.py](mcp_server.py) | servidor MCP |
-| [admin_app.py](admin_app.py), [admin_tokens.py](admin_tokens.py) | painel de acessos |
-| [auditoria.py](auditoria.py), [perguntas.py](perguntas.py) | trilha de consultas e catálogo de perguntas (fila de lacunas) |
-| [ARQUITETURA.md](ARQUITETURA.md) | por que cada peça é como é |
+| [admin_app.py](admin_app.py) · [admin_tokens.py](admin_tokens.py) | painel de acessos |
+| [auditoria.py](auditoria.py) · [perguntas.py](perguntas.py) | trilha de consultas e fila de lacunas |
+| [check.py](check.py) · [tests/](tests/) | verificador da base e testes (rodam no CI) |
 
-Testes: `python3 -m unittest discover -s tests -v` (biblioteca padrão; o teste do
-painel roda quando `httpx` está instalado).
+O porquê de cada decisão, em detalhe: [ARQUITETURA.md](ARQUITETURA.md).
+
+## Licença
+
+[A DEFINIR — por exemplo, MIT. Sem uma licença, o código fica com todos os direitos
+reservados e ninguém pode reutilizá-lo.]
