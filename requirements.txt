@@ -1,0 +1,38 @@
+# Dependências do motor-consulta. Drivers de banco são importados sob demanda:
+# quem só usa PostgreSQL pode instalar só o psycopg2-binary (e o resto da lista
+# que não é driver). O SQLite vem na biblioteca padrão do Python.
+
+python-dotenv>=1.0
+
+# Servidor MCP (mcp_server.py) e painel de acessos (admin_app.py). O pacote mcp já
+# traz starlette, uvicorn, httpx e anyio, que o painel também usa. Exige Python 3.10+.
+#
+# TETO EM <2 É OBRIGATÓRIO: o mcp 2.0.0 removeu `mcp.server.fastmcp` e renomeou a
+# classe FastMCP -> MCPServer. Com a faixa solta, o build pega a 2.x e o
+# mcp_server.py morre no import ("No module named 'mcp.server.fastmcp'"). Para
+# subir de versão, porte o mcp_server.py para a API 2.x antes.
+mcp>=1.2,<2
+
+# --- Drivers -------------------------------------------------------------------
+
+# Oracle: modo thin por padrão (sem client library). Servidor antigo, com
+# verificador de senha 10g (erro DPY-3015), exige modo thick: construa a imagem com
+# COM_ORACLE=1 (instala o Oracle Instant Client) ou aponte ORACLE_CLIENT_LIB_DIR.
+oracledb>=2.0
+
+# SQL Server: wheels com FreeTDS embutido (dispensa ODBC do sistema).
+pymssql>=2.2
+
+# Firebird: exige a client library libfbclient no host (a imagem instala o
+# pacote libfbclient2). Parâmetros posicionais `?`.
+fdb>=2.0
+
+# MySQL/MariaDB: Python puro, nenhuma client library no SO.
+PyMySQL>=1.1
+# NÃO é opcional para o MySQL 8: sustenta o TLS e o handshake do
+# caching_sha2_password. Sem ele: "cryptography is required for sha256_password
+# or caching_sha2_password".
+cryptography>=42.0
+
+# PostgreSQL: a wheel binária traz a libpq (nenhuma linha de apt).
+psycopg2-binary>=2.9

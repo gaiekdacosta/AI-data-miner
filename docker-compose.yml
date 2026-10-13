@@ -1,0 +1,213 @@
+# motor-consulta — CLI, servidor MCP, proxy de autenticação e painel de acessos.
+#
+# A CLI roda sob demanda (não é serviço de longa duração):
+#
+#   docker compose run --rm cli ping
+#   docker compose run --rm cli query "SELECT * FROM pedidos LIMIT 5"
+#   docker compose run --rm cli --perfil rh tabelas "FUNC%"
+#
+# O servidor compartilhado são três serviços que sobem juntos:
+#
+#   docker compose up -d mcp proxy admin
+#
+# As credenciais dos bancos vêm do .env (copie de .env.example); a senha do painel,
+# do .env.admin (copie de .env.admin.example). Os dois ficam fora do git.
+
+# Projeto fixado: sem isto o nome vem do diretório, e um clone com outro nome de
+# pasta subiria uma stack paralela (rede/containers/volume duplicados).
+name: motor_consulta
+
+x-imagem: &imagem
+  build:
+    context: .
+    args:
+      COM_ORACLE: "${COM_ORACLE:-0}"
+  image: motor_consulta:latest
+
+services:
+  cli:
+    <<: *imagem
+    env_file:
+      - .env
+    # Sem portas nem volumes: a ferramenta só faz conexões de SAÍDA aos bancos.
+    # Para gerar dicionário (que ESCREVE em contexto/), monte o fonte:
+    #   docker compose run --rm -v "$PWD:/app" --entrypoint python cli \
+    #       gerar_dicionario.py --perfil vendas
+    networks:
+      - app-network
+
+  # Servidor MCP (long-running) — expõe as tools read-only via HTTP. Publicado SÓ
+  # em 127.0.0.1: quem abre para a rede é o `proxy`, com token por pessoa.
+  mcp:
+    <<: *imagem
+    env_file:
+      - .env
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8000"
+      # Sem isto o container roda em UTC e a trilha de auditoria fica fora do
+      # horário de quem vai ler.
+      TZ: "${TZ:-America/Sao_Paulo}"
+      # Quais bancos a requisição pode consultar vem do header que o bloco da
+      # pessoa injeta no proxy (X-Db-Perfis, administrado pelo painel). VAZIO aqui
+      # é de propósito: requisição sem atribuição não consulta NADA, em vez de
+      # consultar tudo. A CLI não passa por este serviço.
+      MCP_PERFIS_PADRAO: ""
+      # O segredo do proxy (MCP_PROXY_SEGREDO) NÃO é repetido aqui de propósito:
+      # ele vem do `.env` pelo env_file, e `environment:` VENCE o env_file — um
+      # valor vazio aqui derrubaria o gate em silêncio (e sem o segredo este
+      # serviço nega toda requisição HTTP).
+      #
+      # Sem sessão MCP (um transporte por requisição) — ver mcp_server.py.
+      # Para voltar ao modo com sessão: "0" e `docker compose up -d mcp`.
+      MCP_STATELESS: "1"
+      AUDIT_DIR: /auditoria
+      PERGUNTAS_DIR: /perguntas
+      DOSSIE_DIR: /dossie
+    entrypoint: ["python", "mcp_server.py"]
+    volumes:
+      # Trilha (quem consultou o quê) e catálogo de perguntas: dado sensível, fora
+      # do git, gravado pelo mcp.
+      - ./auditoria:/auditoria
+      - ./perguntas:/perguntas
+      # Relatório de lacunas (gerar_dossie.sh). Quem gera é o mcp, porque só ele
+      # tem contexto/ montado — pontuar a pergunta exige o índice vigente.
+      - ./dossie:/dossie
+      # A base de conhecimento entra por VOLUME, não pela imagem: assim um
+      # `git pull` + `docker compose restart mcp` entrega nota nova sem rebuild.
+      # Read-only porque o servidor só lê — quem escreve é o gerar_dicionario.py,
+      # pela CLI. Código segue assado na imagem: mexer em *.py exige
+      # `docker compose up -d --build mcp`.
+      - ./NOTES:/app/NOTES:ro
+      - ./contexto:/app/contexto:ro
+    ports:
+      - "127.0.0.1:${MCP_PORTA_HOST:-8010}:8000"
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Proxy de autenticação — OBRIGATÓRIO antes de abrir para a rede. O `mcp` não
+  # autentica pessoa: este proxy exige Bearer token por pessoa e injeta os bancos
+  # liberados para ela.
+  #
+  # BIND: por padrão sobe só em 127.0.0.1. Para liberar para a rede interna,
+  # MCP_PROXY_BIND=0.0.0.0 no .env e `docker compose up -d proxy`.
+  proxy:
+    image: caddy:2-alpine
+    depends_on:
+      - mcp
+    environment:
+      # O segredo que o Caddyfile injeta em toda requisição (X-Proxy-Segredo) e
+      # que o mcp exige para atender HTTP. Sem esta linha o placeholder resolveria
+      # para vazio e o mcp recusaria todo mundo (403) — o lado seguro do erro.
+      MCP_PROXY_SEGREDO: "${MCP_PROXY_SEGREDO:-}"
+    ports:
+      - "${MCP_PROXY_BIND:-127.0.0.1}:${MCP_PROXY_PORTA:-8011}:8011"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Precisa EXISTIR antes de subir (cp caddy/tokens.caddy.example
+      # caddy/tokens.caddy): bind-mount de arquivo ausente vira diretório.
+      - ./caddy/tokens.caddy:/etc/caddy/tokens.caddy:ro
+      - ./caddy/data:/data
+      - ./caddy/config:/config
+      # Socket da API de admin, compartilhado SÓ com o `admin`: é por ele que o
+      # painel recarrega a configuração ao criar/revogar um token.
+      - caddy-admin:/run/caddy
+      # Log de acesso em JSON (retenção + o "último uso" que o painel mostra).
+      - ./caddy/log:/var/log/caddy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # Painel de acessos (admin_app.py): gera/rotaciona/renova/revoga token e testa
+  # o token contra o proxy. Quem alcança esta porta cria credencial de acesso aos
+  # bancos, então ele NUNCA sobe exposto sem senha: com bind fora do loopback, o
+  # app exige ADMIN_SENHA e sai com erro se não houver.
+  #
+  # NÃO recebe o .env: o painel não precisa das senhas dos bancos, e assim elas
+  # não entram neste container. A lista de perfis chega por interpolação (o
+  # compose lê o .env da pasta para resolver ${...}).
+  #
+  # O código é ASSADO na imagem: mexer no admin_app.py exige
+  # `docker compose up -d --build admin`.
+  admin:
+    <<: *imagem
+    depends_on:
+      - proxy
+    # Segredo do painel (ADMIN_SENHA). Arquivo PRÓPRIO, não o .env: aquele é o
+    # env_file do `mcp` e da `cli`, que não têm nada a fazer com a senha do painel.
+    # ⚠️ Nada que venha do `.env.admin` pode ser repetido em `environment:` — o
+    # `environment` VENCE o `env_file` e zeraria o valor em silêncio.
+    env_file:
+      - path: ./.env.admin
+        required: false
+    environment:
+      TZ: "${TZ:-America/Sao_Paulo}"
+      MCP_NOME: "${MCP_NOME:-motor-consulta}"
+      PERFIS: "${PERFIS:-}"
+      PERFIS_SENSIVEIS: "${PERFIS_SENSIVEIS:-}"
+      PERFIS_INICIAIS: "${PERFIS_INICIAIS:-}"
+      # Mesma variável que decide o bind em `ports:` — o app a usa para se recusar
+      # a subir exposto sem senha.
+      ADMIN_BIND: "${ADMIN_BIND:-127.0.0.1}"
+      ADMIN_PORT: "8012"
+      REDE_SUBNET: "${REDE_SUBNET:-172.30.99.0/24}"
+      # Escreve o tokens.caddy: monta a PASTA (e não o arquivo), porque o painel
+      # precisa criar os backups ao lado.
+      TOKENS_PATH: /caddy/tokens.caddy
+      CADDYFILE_PATH: /caddy/Caddyfile
+      CADDY_ADMIN_SOCK: /run/caddy/admin.sock
+      CADDY_ACCESS_LOG: /caddy/log/access.log
+      # Só para os comandos prontos que a tela mostra.
+      MCP_ENDPOINT: "${MCP_ENDPOINT:-http://localhost:8011/mcp}"
+      MCP_PROXY_INTERNO: "http://proxy:8011/mcp"
+      AUDIT_DIR: /auditoria
+      PERGUNTAS_DIR: /perguntas
+      DOSSIE_DIR: /dossie
+      TOKENS_AUDIT_DIR: /auditoria-tokens
+    entrypoint: ["python", "admin_app.py"]
+    volumes:
+      - ./caddy:/caddy
+      - caddy-admin:/run/caddy
+      # Só leitura: o painel mostra a trilha, o catálogo e o relatório; quem
+      # escreve é o mcp.
+      - ./auditoria:/auditoria:ro
+      - ./perguntas:/perguntas:ro
+      - ./dossie:/dossie:ro
+      # Aqui sim escreve: o rastro de cada alteração no arquivo de tokens. Separado
+      # do de consultas para que o painel não possa reescrever o que o audita.
+      - ./auditoria-tokens:/auditoria-tokens
+    ports:
+      - "${ADMIN_BIND:-127.0.0.1}:${ADMIN_PORTA:-8012}:8012"
+    # `always`: o painel é a única via para revogar acesso, então volta mesmo
+    # depois de uma parada manual esquecida. (Nenhuma política ressuscita o que o
+    # `compose down` removeu — para isso existe o watchdog_admin.sh.)
+    restart: always
+    # /saude é passivo de propósito (não recarrega o Caddy) e responde 503 quando o
+    # tokens.caddy fica ilegível ou o socket do proxy desaparece. O Docker NÃO
+    # reinicia container unhealthy: quem age sobre "de pé mas travado" é o
+    # watchdog_admin.sh, agendado no host.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8012/saude"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - app-network
+
+# Sub-rede FIXA, configurável. Fixar evita que o Docker escolha sozinho uma faixa
+# que colida com a rede da empresa (um 192.168.x do pool padrão pode sombrear a
+# rota para uma VLAN real, em silêncio). Troque REDE_SUBNET no .env se a faixa
+# padrão estiver em uso aí.
+networks:
+  app-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "${REDE_SUBNET:-172.30.99.0/24}"
+
+volumes:
+  # Só carrega o socket unix da API de admin do Caddy (proxy <-> admin).
+  caddy-admin:

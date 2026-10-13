@@ -1,0 +1,21 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Python puro, sem banco e sem dependências: pasta e frontmatter de cada nota,
+      # pontes, sincronia dos índices (notes.json/edges.json/vetores.json) e
+      # vazamentos óbvios em NOTES/.
+      - run: python3 check.py
+      # Testes de unidade + ponta a ponta no SQLite de exemplo (biblioteca padrão).
+      - run: python3 -m unittest discover -s tests -v

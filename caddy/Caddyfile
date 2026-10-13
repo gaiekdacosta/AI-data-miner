@@ -1,0 +1,71 @@
+# Proxy de autenticação na frente do servidor MCP.
+#
+# O mcp_server não autentica pessoa: quem alcança a porta dele executaria
+# consultas nos bancos (se tivesse o segredo abaixo). Por isso ele só publica em
+# 127.0.0.1 e QUEM ABRE PARA A REDE É ESTE PROXY, exigindo um Bearer token por
+# pessoa.
+#
+# Os tokens ficam em caddy/tokens.caddy (fora do git, como o .env) e são
+# administrados pelo painel (serviço `admin`). À mão, revogar alguém = apagar o
+# bloco da pessoa e recarregar:
+#   docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile \
+#       --address unix//run/caddy/admin.sock
+
+{
+	# Sem domínio público por padrão: nada de ACME/Let's Encrypt. Para expor fora
+	# da rede interna, troque `:8011` por um nome com HTTPS (e tire esta linha).
+	auto_https off
+
+	# API de admin num SOCKET UNIX, compartilhado por volume só com o serviço
+	# `admin` — é por ela que o painel recarrega a configuração ao criar/revogar
+	# um token. Numa porta TCP, qualquer container da rede (o mcp, por exemplo)
+	# poderia reconfigurar o gate; no socket, só quem tem o volume. (`admin off`
+	# não serve: sem a API não existe reload, e revogar exigiria reiniciar o
+	# proxy, derrubando as sessões de todo mundo.)
+	admin unix//run/caddy/admin.sock
+}
+
+:8011 {
+	# Log em dois lugares, de propósito:
+	#  - console no stdout: `docker compose logs proxy` é o diagnóstico rápido de
+	#    "chegou requisição dessa máquina?";
+	#  - JSON em arquivo: é o que o painel lê para mostrar quem usou por último (e
+	#    o que dá retenção, já que o stdout do container é volátil).
+	log {
+		output stdout
+		format console
+	}
+	log arquivo {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+		format json
+	}
+
+	# O segredo que prova ao mcp que a requisição passou POR AQUI.
+	#
+	# O mcp decide os bancos por `X-Db-Perfis`, que este proxy injeta. Quem
+	# alcançasse a porta do mcp direto mandaria esse header por conta própria e
+	# consultaria tudo sem token. Este header é o que o mcp exige para atender:
+	# sem ele, 403.
+	#
+	# `request_header` é SET (delete + add): o valor que o cliente mandar é
+	# descartado antes de subir. Fica AQUI, e não no bloco de cada pessoa, para
+	# que nenhum bloco novo — ou escrito à mão — possa esquecer a linha; e roda
+	# antes dos `handle`, então vale para todos eles.
+	#
+	# O valor vem do ambiente do container (MCP_PROXY_SEGREDO, no .env, entregue
+	# pelo compose): o segredo não entra em arquivo de configuração.
+	request_header X-Proxy-Segredo "{env.MCP_PROXY_SEGREDO}"
+
+	# Um bloco `handle` por pessoa (arquivo separado, não versionado). O import é
+	# ABSOLUTO: o painel recarrega mandando o CONTEÚDO deste arquivo, e um caminho
+	# relativo seria resolvido contra o cwd do processo do Caddy.
+	import /etc/caddy/tokens.caddy
+
+	# Sem token válido: barra. É o catch-all — precisa ser o último handle.
+	handle {
+		respond "Unauthorized" 401
+	}
+}

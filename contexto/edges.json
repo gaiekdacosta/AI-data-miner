@@ -1,0 +1,153 @@
+{
+  "directed": true,
+  "edges": [
+    {
+      "source": "DEVOLUCOES",
+      "target": "ITENS_PEDIDO",
+      "tipo": "ponte"
+    },
+    {
+      "source": "ITENS_PEDIDO",
+      "target": "PRODUTOS",
+      "tipo": "ponte"
+    },
+    {
+      "source": "PEDIDOS",
+      "target": "CLIENTES",
+      "tipo": "ponte"
+    },
+    {
+      "source": "PEDIDOS",
+      "target": "ITENS_PEDIDO",
+      "tipo": "ponte"
+    },
+    {
+      "source": "PRODUTOS",
+      "target": "CATEGORIAS",
+      "tipo": "ponte"
+    },
+    {
+      "source": "cliente-so-tem-codigo",
+      "target": "CLIENTES",
+      "tipo": "cita"
+    },
+    {
+      "source": "cliente-so-tem-codigo",
+      "target": "PEDIDOS",
+      "tipo": "cita"
+    },
+    {
+      "source": "devolucao-nao-sai-da-view",
+      "target": "DEVOLUCOES",
+      "tipo": "cita"
+    },
+    {
+      "source": "devolucao-nao-sai-da-view",
+      "target": "ITENS_PEDIDO",
+      "tipo": "cita"
+    },
+    {
+      "source": "devolucao-nao-sai-da-view",
+      "target": "VW_FATURAMENTO_MENSAL",
+      "tipo": "cita"
+    },
+    {
+      "source": "devolucao-nao-sai-da-view",
+      "target": "faturamento-so-pedido-faturado",
+      "tipo": "referencia"
+    },
+    {
+      "source": "faturamento-so-pedido-faturado",
+      "target": "ITENS_PEDIDO",
+      "tipo": "cita"
+    },
+    {
+      "source": "faturamento-so-pedido-faturado",
+      "target": "PEDIDOS",
+      "tipo": "cita"
+    },
+    {
+      "source": "faturamento-so-pedido-faturado",
+      "target": "VW_FATURAMENTO_MENSAL",
+      "tipo": "cita"
+    },
+    {
+      "source": "faturamento-so-pedido-faturado",
+      "target": "devolucao-nao-sai-da-view",
+      "tipo": "referencia"
+    },
+    {
+      "source": "faturamento-so-pedido-faturado",
+      "target": "valor-vendido-vem-do-item",
+      "tipo": "referencia"
+    },
+    {
+      "source": "valor-vendido-vem-do-item",
+      "target": "CATEGORIAS",
+      "tipo": "cita"
+    },
+    {
+      "source": "valor-vendido-vem-do-item",
+      "target": "ITENS_PEDIDO",
+      "tipo": "cita"
+    },
+    {
+      "source": "valor-vendido-vem-do-item",
+      "target": "PEDIDOS",
+      "tipo": "cita"
+    },
+    {
+      "source": "valor-vendido-vem-do-item",
+      "target": "PRODUTOS",
+      "tipo": "cita"
+    }
+  ],
+  "graph": {},
+  "multigraph": true,
+  "nodes": [
+    {
+      "id": "CATEGORIAS",
+      "tipo": "tabela"
+    },
+    {
+      "id": "CLIENTES",
+      "tipo": "tabela"
+    },
+    {
+      "id": "DEVOLUCOES",
+      "tipo": "tabela"
+    },
+    {
+      "id": "ITENS_PEDIDO",
+      "tipo": "tabela"
+    },
+    {
+      "id": "PEDIDOS",
+      "tipo": "tabela"
+    },
+    {
+      "id": "PRODUTOS",
+      "tipo": "tabela"
+    },
+    {
+      "id": "VW_FATURAMENTO_MENSAL",
+      "tipo": "tabela"
+    },
+    {
+      "id": "cliente-so-tem-codigo",
+      "tipo": "nota"
+    },
+    {
+      "id": "devolucao-nao-sai-da-view",
+      "tipo": "nota"
+    },
+    {
+      "id": "faturamento-so-pedido-faturado",
+      "tipo": "nota"
+    },
+    {
+      "id": "valor-vendido-vem-do-item",
+      "tipo": "nota"
+    }
+  ]
+}

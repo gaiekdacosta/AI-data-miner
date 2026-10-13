@@ -1,0 +1,13 @@
+# Sinônimos aplicados à PERGUNTA antes da busca no índice vetorial (um grupo por
+# linha, termos separados por vírgula). O índice não muda: acrescentar grupo não
+# exige reconstruir nada.
+#
+# Regra de manutenção: só acrescente um grupo depois de uma busca que falhou de
+# verdade — sinônimo chutado piora o ranking em silêncio. Compare com
+# `python3 vetorial.py buscar "..." --sem-glossario`.
+
+faturamento, receita, vendas, venda
+devolução, estorno, troca
+cliente, comprador, consumidor
+produto, item, mercadoria, sku
+cancelado, cancelamento, estornado

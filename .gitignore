@@ -1,0 +1,42 @@
+# Nunca versione credenciais
+.env
+.env.admin
+
+# Tokens de acesso ao MCP (um por pessoa) — segredo, como o .env.
+# O modelo versionado é caddy/tokens.caddy.example.
+caddy/tokens.caddy
+# Backups que o painel deixa ao editar os tokens: cada um é uma cópia INTEIRA dos
+# tokens de todo mundo. O glob é obrigatório (os backups têm data no nome).
+caddy/tokens.caddy.bak*
+
+# Estado do Caddy (certificados, config e log gerados em runtime)
+caddy/data/
+caddy/config/
+caddy/log/
+
+# Trilha de auditoria (pessoa + SQL + horário): um WHERE pode carregar CPF, nome,
+# matrícula. Tratar como o .env.
+auditoria/
+# Rastro de alterações no arquivo de tokens.
+auditoria-tokens/
+# Catálogo de perguntas e relatórios de lacunas: a redação de uma pergunta de
+# negócio carrega nome de gente e de cliente sem nenhum esforço.
+perguntas/
+dossie/
+
+# Banco de exemplo: é gerado por exemplo/criar_banco.py (o script é versionado).
+exemplo/*.db
+
+# Exportações de dados reais
+*.csv
+
+# Artefatos Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# A base de conhecimento (NOTES/ e contexto/) É versionada de propósito: é ela
+# que alimenta recuperar.py, validar_sql.py e o grafo, então um clone já vem
+# pronto. Antes de commitar uma nota nova, confira que os exemplos de SQL não
+# carregam documento, nome ou dado real de pessoa (o check.py ajuda, não garante).

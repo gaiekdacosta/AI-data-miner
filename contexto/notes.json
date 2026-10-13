@@ -1,0 +1,78 @@
+{
+  "notas": [
+    {
+      "arquivo": "NOTES/loja/cadastro/cliente-so-tem-codigo.md",
+      "assunto": "cadastro",
+      "id": "cliente-so-tem-codigo",
+      "links": [],
+      "perfil": "loja",
+      "pontes": [
+        "PEDIDOS -> CLIENTES"
+      ],
+      "tabelas": [
+        "CLIENTES",
+        "PEDIDOS"
+      ],
+      "tags": [],
+      "titulo": "Cliente não tem nome no banco: recorte por cidade, UF e segmento"
+    },
+    {
+      "arquivo": "NOTES/loja/vendas/devolucao-nao-sai-da-view.md",
+      "assunto": "vendas",
+      "id": "devolucao-nao-sai-da-view",
+      "links": [
+        "faturamento-so-pedido-faturado"
+      ],
+      "perfil": "loja",
+      "pontes": [
+        "DEVOLUCOES -> ITENS_PEDIDO"
+      ],
+      "tabelas": [
+        "DEVOLUCOES",
+        "ITENS_PEDIDO",
+        "VW_FATURAMENTO_MENSAL"
+      ],
+      "tags": [],
+      "titulo": "vw_faturamento_mensal é bruto: devoluções precisam ser abatidas à parte"
+    },
+    {
+      "arquivo": "NOTES/loja/vendas/faturamento-so-pedido-faturado.md",
+      "assunto": "vendas",
+      "id": "faturamento-so-pedido-faturado",
+      "links": [
+        "devolucao-nao-sai-da-view",
+        "valor-vendido-vem-do-item"
+      ],
+      "perfil": "loja",
+      "pontes": [
+        "PEDIDOS -> ITENS_PEDIDO"
+      ],
+      "tabelas": [
+        "ITENS_PEDIDO",
+        "PEDIDOS",
+        "VW_FATURAMENTO_MENSAL"
+      ],
+      "tags": [],
+      "titulo": "Faturamento conta só pedido com status 'faturado' — cancelado e aberto continuam na tabela"
+    },
+    {
+      "arquivo": "NOTES/loja/vendas/valor-vendido-vem-do-item.md",
+      "assunto": "vendas",
+      "id": "valor-vendido-vem-do-item",
+      "links": [],
+      "perfil": "loja",
+      "pontes": [
+        "ITENS_PEDIDO -> PRODUTOS",
+        "PRODUTOS -> CATEGORIAS"
+      ],
+      "tabelas": [
+        "CATEGORIAS",
+        "ITENS_PEDIDO",
+        "PEDIDOS",
+        "PRODUTOS"
+      ],
+      "tags": [],
+      "titulo": "Valor vendido vem de itens_pedido.preco_unitario com desconto, nunca de produtos.preco_tabela"
+    }
+  ]
+}

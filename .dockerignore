@@ -1,0 +1,23 @@
+# Nunca embutir credenciais na imagem (injetadas em runtime via env_file)
+.env
+.env.admin
+
+# Estado do proxy (gerado em runtime, com dono root) e os tokens: não vão para a
+# imagem. Sem esta linha o build também morreria tentando ler caddy/config/ como
+# usuário comum.
+caddy/
+
+# Dado sensível gerado em runtime
+auditoria/
+auditoria-tokens/
+perguntas/
+dossie/
+
+# O banco de exemplo é gerado DENTRO da imagem (RUN no Dockerfile)
+exemplo/*.db
+
+.git/
+__pycache__/
+*.pyc
+.venv/
+venv/

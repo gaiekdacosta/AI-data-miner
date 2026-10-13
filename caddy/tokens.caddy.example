@@ -1,0 +1,48 @@
+# Tokens de acesso ao MCP — UM BLOCO POR PESSOA.
+#
+# Copie para caddy/tokens.caddy (esse sim é ignorado pelo git):
+#
+#   cp caddy/tokens.caddy.example caddy/tokens.caddy && chmod 600 caddy/tokens.caddy
+#
+# Copiado assim, ninguém tem acesso: o bloco de exemplo abaixo está COMENTADO de
+# propósito (um token de exemplo ativo seria uma senha publicada no repositório).
+#
+# O JEITO NORMAL DE MEXER AQUI É O PAINEL, não o editor:
+#
+#   docker compose up -d admin      # painel em http://127.0.0.1:8012
+#
+# Ele cria, rotaciona, renova e revoga acesso — grava este arquivo e recarrega o
+# Caddy na mesma ação. A linha `# motor-consulta-token nome=... criado=...` são
+# metadados que o painel lê (o Caddy ignora).
+#
+# À mão, se preferir:
+#
+#   openssl rand -hex 32
+#   docker compose exec proxy caddy reload --config /etc/caddy/Caddyfile \
+#       --address unix//run/caddy/admin.sock
+#
+# Revogar = apagar o bloco da pessoa e recarregar.
+#
+# reverse_proxy aponta para o serviço `mcp` na rede do compose (porta interna
+# 8000), não para a porta publicada no host.
+
+# motor-consulta-token nome="Nome da Pessoa" criado="2026-01-01 09:00"
+# @nome_da_pessoa header Authorization "Bearer TOKEN_DE_64_HEX"
+# handle @nome_da_pessoa {
+# 	# Atribui a chamada à pessoa no log de acesso: é assim que o painel mostra
+# 	# "último uso".
+# 	log_append pessoa nome_da_pessoa
+# 	reverse_proxy mcp:8000 {
+# 		# Não repassa o token da pessoa para o servidor MCP.
+# 		header_up -Authorization
+# 		# Quem é (vai para a trilha de auditoria).
+# 		header_up X-Db-Pessoa "nome_da_pessoa"
+# 		# Bancos que ESTA pessoa pode consultar. SET: o cliente não forja. Sem
+# 		# esta linha, o mcp cai no MCP_PERFIS_PADRAO — vazio no compose = nega tudo.
+# 		header_up X-Db-Perfis "vendas"
+# 		# Até quando o acesso vale (inclusive). Sem a linha, não vence.
+# 		header_up X-Db-Expira "2026-12-31"
+# 		# MCP streamable-http usa SSE: não pode bufferizar a resposta.
+# 		flush_interval -1
+# 	}
+# }
