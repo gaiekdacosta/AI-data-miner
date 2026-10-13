@@ -4,7 +4,7 @@
 esquecer o que já descobriu e sem conseguir escrever uma linha sequer.**
 
 > Este repositório acompanha o artigo
-> **[TÍTULO DO ARTIGO](https://substack.com/home/post/p-213281631)** no Substack,
+> **[Quanto mais desestruturado o seu dado, maior o seu ganho](https://substack.com/home/post/p-213281631)** no Substack,
 > onde conto como o projeto nasceu e o que aprendi construindo. Aqui está o código —
 > e um banco de exemplo para você ver tudo funcionando em dois minutos.
 
