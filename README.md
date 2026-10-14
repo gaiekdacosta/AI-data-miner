@@ -1,4 +1,4 @@
-# motor-consulta
+# MCP motor-consulta
 
 **Um motor para a IA consultar bancos de dados de produção sem inventar coluna, sem
 esquecer o que já descobriu e sem conseguir escrever uma linha sequer.**
